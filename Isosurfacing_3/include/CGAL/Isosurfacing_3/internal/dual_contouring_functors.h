@@ -39,10 +39,16 @@ namespace Positioning {
  *
  * \tparam use_bbox clamp vertex position to the bounding box of the cell
  */
-template <bool use_bbox = false>
+template <typename Domain, bool use_bbox = false>
 class QEM_SVD
 {
+  typedef typename Domain::Geom_traits::FT FT;
 public:
+  QEM_SVD(const FT isovalue)
+      : isovalue(isovalue)
+  {
+
+  }
   /*
    * \brief computes the vertex position for a point in Dual Contouring.
    *
@@ -55,14 +61,11 @@ public:
    *
    * \return `true` if the voxel intersects the isosurface, `false` otherwise
    */
-  template <typename Domain>
   bool position(const Domain& domain,
-                const typename Domain::Geom_traits::FT isovalue,
                 const typename Domain::Cell_descriptor& cell,
                 typename Domain::Geom_traits::Point_3& p) const
   {
     using Geom_traits = typename Domain::Geom_traits;
-    using FT = typename Geom_traits::FT;
     using Point_3 = typename Geom_traits::Point_3;
     using Vector_3 = typename Geom_traits::Vector_3;
 
@@ -162,14 +165,23 @@ public:
 
     return true;
   }
+
+  const FT isovalue;
 };
 
 /**
  * \brief returns the cell's center.
  */
+template <typename Domain>
 class Cell_center
 {
-public:
+  typedef typename Domain::Geom_traits::FT FT;
+  public:
+  Cell_center(const FT isovalue)
+      : isovalue(isovalue)
+  {
+
+  }
   /*
    * \brief computes the vertex position for a point in Dual Contouring.
    *
@@ -182,7 +194,6 @@ public:
    *
    * \return `true` if the voxel intersects the isosurface, `false` otherwise
    */
-  template <typename Domain>
   bool position(const Domain& domain,
                 const typename Domain::Geom_traits::FT isovalue,
                 const typename Domain::Cell_descriptor& vh,
@@ -216,14 +227,23 @@ public:
 
     return true;
   }
+
+  const FT isovalue;
 };
 
 /*
  * \brief computes the centroid of all cell edge intersections with the isosurface.
  */
+template <typename Domain>
 class Centroid_of_edge_intersections
 {
-public:
+  typedef typename Domain::Geom_traits::FT FT;
+  public:
+  Centroid_of_edge_intersections(const FT isovalue)
+      : isovalue(isovalue)
+  {
+
+  }
   /*
    * \brief computes the vertex position for a point in Dual Contouring.
    *
@@ -236,7 +256,6 @@ public:
    *
    * \return `true` if the voxel intersects the isosurface, `false` otherwise
    */
-  template <typename Domain>
   bool position(const Domain& domain,
                 const typename Domain::Geom_traits::FT isovalue,
                 const typename Domain::Cell_descriptor& cell,
@@ -283,6 +302,8 @@ public:
 
     return true;
   }
+
+  const FT isovalue;
 };
 
 } // namespace Positioning
@@ -299,10 +320,8 @@ private:
 
 public:
   Dual_contouring_vertex_positioning(const Domain& domain,
-                                     const FT isovalue,
-                                     const Positioning& positioning)
+                                     Positioning& positioning)
     : domain(domain),
-      isovalue(isovalue),
       positioning(positioning),
       points_counter(0)
   { }
@@ -311,7 +330,7 @@ public:
   {
     // compute dc-vertices
     Point_3 p; // fixme: initialize?
-    if(positioning.position(domain, isovalue, v, p))
+    if(positioning.position(domain, v, p))
     {
       std::lock_guard<std::mutex> lock(mutex);
       map_voxel_to_point[v] = p;
@@ -321,8 +340,7 @@ public:
 
   // private: // @todo
   const Domain& domain;
-  const FT isovalue;
-  const Positioning& positioning;
+  Positioning& positioning;
 
   std::map<Cell_descriptor, std::size_t> map_voxel_to_point_id;
   std::map<Cell_descriptor, Point_3> map_voxel_to_point;
@@ -331,7 +349,48 @@ public:
   std::mutex mutex;
 };
 
+namespace Conditioning {
+
 template <typename Domain>
+class Isovalue_condition
+{
+  using FT = typename Domain::Geom_traits::FT;
+
+  using Edge_descriptor = typename Domain::Edge_descriptor;
+  using Cell_descriptor = typename Domain::Cell_descriptor;
+public:
+  Isovalue_condition(const FT isovalue)
+      : isovalue(isovalue)
+  {
+
+  }
+
+  bool condition(const Domain& domain, const Edge_descriptor & e, bool & orientation)
+  {
+    // save all faces
+    const auto& vertices = domain.incident_vertices(e);
+    const FT s0 = domain.value(vertices[0]);
+    const FT s1 = domain.value(vertices[1]);
+
+    if(s0 <= isovalue && s1 > isovalue)
+    {
+      orientation = true;
+      return true;
+    }
+    else if(s1 <= isovalue && s0 > isovalue)
+    {
+      orientation = false;
+      return true;
+    }
+    return false;
+  }
+
+  const FT isovalue;
+};
+}
+
+template <typename Domain,
+          typename Conditioning>
 class Dual_contouring_face_generation
 {
 private:
@@ -342,31 +401,27 @@ private:
 
 public:
   Dual_contouring_face_generation(const Domain& domain,
-                                  const FT isovalue)
+                                  Conditioning& conditioning)
     : domain(domain),
-      isovalue(isovalue)
+      conditioning(conditioning)
   { }
 
   void operator()(const Edge_descriptor& e)
   {
-    // save all faces
-    const auto& vertices = domain.incident_vertices(e);
-    const FT s0 = domain.value(vertices[0]);
-    const FT s1 = domain.value(vertices[1]);
-
-    if(s0 <= isovalue && s1 > isovalue)
+    bool orientation;
+    if (conditioning.condition(domain, e, orientation))
     {
       const auto& voxels = domain.incident_cells(e);
 
       std::lock_guard<std::mutex> lock(mutex);
-      faces[e].insert(faces[e].begin(), voxels.begin(), voxels.end());
-    }
-    else if(s1 <= isovalue && s0 > isovalue)
-    {
-      const auto& voxels = domain.incident_cells(e);
-
-      std::lock_guard<std::mutex> lock(mutex);
-      faces[e].insert(faces[e].begin(), voxels.rbegin(), voxels.rend());
+      if (orientation)
+      {
+        faces[e].insert(faces[e].begin(), voxels.rbegin(), voxels.rend());
+      }
+      else
+      {
+        faces[e].insert(faces[e].begin(), voxels.begin(), voxels.end());
+      }
     }
   }
 
@@ -374,7 +429,7 @@ public:
   std::map<Edge_descriptor, std::vector<Cell_descriptor> > faces;
 
   const Domain& domain;
-  const FT isovalue;
+  Conditioning& conditioning;
 
   std::mutex mutex;
 };

@@ -53,23 +53,41 @@ void dual_contouring(const Domain& domain,
                      PolygonRange& polygons)
 #else
 template <typename ConcurrencyTag = CGAL::Sequential_tag,
+         typename Domain,
+         typename PointRange,
+         typename PolygonRange>
+void dual_contouring(const Domain& domain,
+                     const typename Domain::FT& isovalue,
+                     PointRange& points,
+                     PolygonRange& polygons)
+{
+  using Conditioning = internal::Conditioning::Isovalue_condition<Domain>;
+  using Positioning = internal::Positioning::QEM_SVD<Domain, true>;
+
+  Conditioning conditioning = Conditioning(isovalue);
+  Positioning positioning = Positioning(isovalue);
+  dual_contouring(domain, points, polygons, conditioning, positioning);
+}
+
+template <typename ConcurrencyTag = CGAL::Sequential_tag,
           typename Domain,
           typename PointRange,
           typename PolygonRange,
-          typename Positioning = internal::Positioning::QEM_SVD<true> >
+          typename Conditionning,
+          typename Positioning>
 void dual_contouring(const Domain& domain,
-                     const typename Domain::Geom_traits::FT isovalue,
                      PointRange& points,
                      PolygonRange& polygons,
-                     const Positioning& positioning = Positioning())
+                     Conditionning& conditionning,
+                     Positioning& positioning)
 #endif
 {
   // create vertices in each relevant cell
-  internal::Dual_contouring_vertex_positioning<Domain, Positioning> pos_func(domain, isovalue, positioning);
+  internal::Dual_contouring_vertex_positioning<Domain, Positioning> pos_func(domain, positioning);
   domain.template iterate_cells<ConcurrencyTag>(pos_func);
 
   // connect vertices around an edge to form a face
-  internal::Dual_contouring_face_generation<Domain> face_generation(domain, isovalue);
+  internal::Dual_contouring_face_generation<Domain, Conditionning> face_generation(domain, conditionning);
   domain.template iterate_edges<ConcurrencyTag>(face_generation);
 
   // copy vertices to point range
