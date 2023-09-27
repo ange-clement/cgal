@@ -16,29 +16,29 @@ using Point_range = std::vector<Point>;
 using Polygon_range = std::vector<std::vector<std::size_t> >;
 
 
-class Label_cell_center
+
+template <typename Domain>
+class Label_cell_offset
 {
+  using Geom_traits = typename Domain::Geom_traits;
+  using FT = typename Geom_traits::FT;
+  using Point_3 = typename Geom_traits::Point_3;
+  using Vector_3 = typename Geom_traits::Vector_3;
+
+  using Vertex_descriptor = typename Domain::Vertex_descriptor;
+
 public:
-  template <typename Domain>
+  Label_cell_offset(Vector_3 offset)
+      : offset(offset)
+  { }
+
   bool position(const Domain& domain,
                 const typename Domain::Cell_descriptor& vh,
-                typename Domain::Geom_traits::Point_3& point) const
+                typename Domain::Geom_traits::Point_3& point)
   {
-    using Geom_traits = typename Domain::Geom_traits;
-    using FT = typename Geom_traits::FT;
-    using Point_3 = typename Geom_traits::Point_3;
-    using Vector_3 = typename Geom_traits::Vector_3;
-
-    using Vertex_descriptor = typename Domain::Vertex_descriptor;
-
     typename Domain::Cell_vertices vertices = domain.cell_vertices(vh);
 
-    std::vector<Point_3> pos(vertices.size());
-    std::transform(vertices.begin(), vertices.end(), pos.begin(),
-                   [&](const Vertex_descriptor& v) { return domain.point(v); });
-
-    // set point to cell center
-    point = CGAL::centroid(pos.begin(), pos.end(), CGAL::Dimension_tag<0>());
+    point = domain.point(vertices[0]) + offset;
 
     FT v0 = domain.value(vertices[0]);
     for (unsigned int i = 1, size = vertices.size(); i < size; i++)
@@ -49,6 +49,9 @@ public:
     }
     return false;
   }
+
+private:
+  Vector_3 offset;
 };
 
 class Label_condition
@@ -90,14 +93,16 @@ int main(int, char**)
   Grid grid{image};
 
   // create a domain from the grid
-  auto domain = CGAL::Isosurfacing::create_explicit_Cartesian_grid_domain(grid);
+  using Domain = CGAL::Isosurfacing::Explicit_Cartesian_grid_domain_3<Grid>;
+  Domain domain = CGAL::Isosurfacing::create_explicit_Cartesian_grid_domain(grid);
 
   // prepare collections for the output indexed mesh
   Point_range points;
   Polygon_range polygons;
 
   // create condition and position
-  Label_cell_center position;
+  Kernel::Vector_3 offset(.5*image.vx(), .5*image.vy(), .5*image.vz());
+  Label_cell_offset<Domain> position(offset);
   Label_condition condition;
 
   // execute dual_contouring
