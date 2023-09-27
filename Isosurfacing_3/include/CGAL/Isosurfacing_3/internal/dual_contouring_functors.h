@@ -23,6 +23,7 @@
 
 #include <array>
 #include <map>
+#include <unordered_map>
 #include <mutex>
 #include <vector>
 
@@ -333,8 +334,7 @@ public:
     if(positioning.position(domain, v, p))
     {
       std::lock_guard<std::mutex> lock(mutex);
-      map_voxel_to_point[v] = p;
-      map_voxel_to_point_id[v] = points_counter++;
+      map_voxel_to_point_id_and_point[v] = std::make_pair(points_counter++, p);
     }
   }
 
@@ -342,8 +342,22 @@ public:
   const Domain& domain;
   Positioning& positioning;
 
-  std::map<Cell_descriptor, std::size_t> map_voxel_to_point_id;
-  std::map<Cell_descriptor, Point_3> map_voxel_to_point;
+  struct cell_descriptor_hash {
+    template <class T1, std::size_t N>
+    std::size_t operator () (const std::array<T1, N> &a) const {
+      std::size_t h = 0;
+
+      for (const auto & e : a) {
+        // boost's hash_combine
+        // https://www.boost.org/doc/libs/1_35_0/doc/html/boost/hash_combine_id241013.html
+        h ^= std::hash<T1>{}(e)  + 0x9e3779b9 + (h << 6) + (h >> 2);
+      }
+      return h;
+    }
+  };
+
+  typedef typename std::unordered_map<Cell_descriptor, std::pair<std::size_t, Point_3>, cell_descriptor_hash> Voxel_map;
+  Voxel_map map_voxel_to_point_id_and_point;
   std::size_t points_counter;
 
   std::mutex mutex;

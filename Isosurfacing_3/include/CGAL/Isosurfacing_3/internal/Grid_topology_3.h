@@ -127,9 +127,9 @@ public:
   template <typename Functor>
   void iterate_vertices(Functor& f, Sequential_tag) const
   {
-    for(std::size_t i=0; i<size_i; ++i)
+    for(std::size_t k=0; k<size_k; ++k)
       for(std::size_t j=0; j<size_j; ++j)
-        for(std::size_t k=0; k<size_k; ++k)
+        for(std::size_t i=0; i<size_i; ++i)
           f({i, j, k});
   }
 
@@ -137,9 +137,9 @@ public:
   template <typename Functor>
   void iterate_edges(Functor& f, Sequential_tag) const
   {
-    for(std::size_t i=0; i<size_i-1; ++i) {
+    for(std::size_t k=0; k<size_k-1; ++k)
       for(std::size_t j=0; j<size_j-1; ++j) {
-        for(std::size_t k=0; k<size_k-1; ++k)
+        for(std::size_t i=0; i<size_i-1; ++i) {
         {
           // all three edges starting at vertex (i, j, k)
           f({i, j, k, 0});
@@ -154,9 +154,9 @@ public:
   template <typename Functor>
   void iterate_cells(Functor& f, Sequential_tag) const
   {
-    for(std::size_t i=0; i<size_i-1; ++i)
+    for(std::size_t k=0; k<size_k-1; ++k)
       for(std::size_t j=0; j<size_j-1; ++j)
-        for(std::size_t k=0; k<size_k-1; ++k)
+        for(std::size_t i=0; i<size_i-1; ++i)
           f({i, j, k});
   }
 

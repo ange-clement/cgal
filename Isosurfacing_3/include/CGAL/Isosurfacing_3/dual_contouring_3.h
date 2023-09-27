@@ -73,38 +73,43 @@ template <typename ConcurrencyTag = CGAL::Sequential_tag,
           typename Domain,
           typename PointRange,
           typename PolygonRange,
-          typename Conditionning,
+          typename Conditioning,
           typename Positioning>
 void dual_contouring(const Domain& domain,
                      PointRange& points,
                      PolygonRange& polygons,
-                     Conditionning& conditionning,
+                     Conditioning& conditioning,
                      Positioning& positioning)
 #endif
 {
   // create vertices in each relevant cell
-  internal::Dual_contouring_vertex_positioning<Domain, Positioning> pos_func(domain, positioning);
+  using Vertex_positioning = internal::Dual_contouring_vertex_positioning<Domain, Positioning>;
+  Vertex_positioning pos_func(domain, positioning);
   domain.template iterate_cells<ConcurrencyTag>(pos_func);
 
   // connect vertices around an edge to form a face
-  internal::Dual_contouring_face_generation<Domain, Conditionning> face_generation(domain, conditionning);
+  internal::Dual_contouring_face_generation<Domain, Conditioning> face_generation(domain, conditioning);
   domain.template iterate_edges<ConcurrencyTag>(face_generation);
 
   // copy vertices to point range
   CGAL::internal::resize(points, pos_func.points_counter);
-  for(const auto& vtop : pos_func.map_voxel_to_point)
-    points[pos_func.map_voxel_to_point_id[vtop.first]] = vtop.second;
+  for(const auto& vtop : pos_func.map_voxel_to_point_id_and_point)
+    points[vtop.second.first] = vtop.second.second;
 
   // copy faces to polygon range
   polygons.reserve(face_generation.faces.size());
+  typename Vertex_positioning::Voxel_map::const_iterator find_it;
   for(const auto& q : face_generation.faces)
   {
     std::vector<std::size_t> vertex_ids;
+    vertex_ids.reserve(q.second.size());
     for(const auto& v_id : q.second)
     {
       // ignore voxels that are outside the valid region and not stored into the map
-      if(pos_func.map_voxel_to_point_id.count(v_id) > 0)
-        vertex_ids.push_back(pos_func.map_voxel_to_point_id[v_id]);
+      find_it = pos_func.map_voxel_to_point_id_and_point.find(v_id);
+      if (find_it != pos_func.map_voxel_to_point_id_and_point.end()) {
+          vertex_ids.push_back(find_it->second.first);
+      }
     }
 
     // ignore degenerated faces
